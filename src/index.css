@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --font-pixel: "Press Start 2P", system-ui, sans-serif;
+  --font-mono-pixel: "VT323", monospace;
+  /* Solarpunk plaza — warm dusk sky, moss stone, honey neon */
+  --color-arcade-bg: #1a3d4a;
+  --color-arcade-pink: #ff6b6b;
+  --color-arcade-cyan: #5eead4;
+  --color-arcade-yellow: #fcd34d;
+  --color-arcade-green: #4ade80;
+  --color-arcade-purple: #a78bfa;
+  --color-arcade-dark: #234e52;
+  --color-arcade-floor: #3d6b52;
+  --color-arcade-wall: #2d4a3e;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--color-arcade-bg);
+  color: var(--color-arcade-cyan);
+  font-family: var(--font-pixel);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  image-rendering: pixelated;
+}
+
+/* Light CRT — soft scanlines, no crushing vignette */
+.crt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.08) 3px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  z-index: 50;
+  mix-blend-mode: multiply;
+}
+
+.crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 70%, rgba(26, 61, 74, 0.35) 100%);
+  z-index: 51;
+}
+
+@keyframes neon-pulse {
+  0%, 100% { text-shadow: 0 0 4px currentColor, 0 0 10px currentColor; }
+  50%      { text-shadow: 0 0 6px currentColor, 0 0 16px currentColor; }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes glow-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.88; }
+}
+
+.neon { animation: neon-pulse 2.2s ease-in-out infinite; }
+.blink { animation: blink 1s steps(2, start) infinite; }
+.bob { animation: bob 0.9s ease-in-out infinite; }
+.fade-in { animation: fade-in 1.2s ease-out both; }
+.fade-in-slow { animation: fade-in 2.4s ease-out both; }
+.glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
