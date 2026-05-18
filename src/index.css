@@ -3,16 +3,16 @@
 @theme {
   --font-pixel: "Press Start 2P", system-ui, sans-serif;
   --font-mono-pixel: "VT323", monospace;
-  /* Solarpunk plaza — warm dusk sky, moss stone, honey neon */
-  --color-arcade-bg: #1a3d4a;
-  --color-arcade-pink: #ff6b6b;
+  /* Solarpunk plaza after dark — deep dusk-blue sky, moss stone, honey neon */
+  --color-arcade-bg: #0e2535;
+  --color-arcade-pink: #ff8a8a;
   --color-arcade-cyan: #5eead4;
   --color-arcade-yellow: #fcd34d;
   --color-arcade-green: #4ade80;
-  --color-arcade-purple: #a78bfa;
-  --color-arcade-dark: #234e52;
-  --color-arcade-floor: #3d6b52;
-  --color-arcade-wall: #2d4a3e;
+  --color-arcade-purple: #c4a5ff;
+  --color-arcade-dark: #143849;
+  --color-arcade-floor: #2d5240;
+  --color-arcade-wall: #234e52;
 }
 
 html, body, #root {
@@ -77,9 +77,72 @@ html, body, #root {
   50%      { opacity: 0.88; }
 }
 
+@keyframes sway {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50%      { transform: rotate(1.5deg); }
+}
+
+@keyframes window-flicker {
+  0%, 100% { opacity: 1; }
+  35%      { opacity: 0.78; }
+  70%      { opacity: 0.95; }
+}
+
+@keyframes lamp-pulse {
+  0%, 100% {
+    opacity: 0.88;
+    filter: drop-shadow(0 0 4px #fcd34d) drop-shadow(0 0 9px rgba(252, 211, 77, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px #fcd34d) drop-shadow(0 0 16px rgba(252, 211, 77, 0.75));
+  }
+}
+
+@keyframes cable-travel {
+  0%   { left: -8%; }
+  100% { left: 108%; }
+}
+
+@keyframes cable-bob {
+  0%, 100% { transform: translateY(0) rotate(-0.5deg); }
+  50%      { transform: translateY(2px) rotate(0.5deg); }
+}
+
+@keyframes fountain-spurt {
+  0%, 100% { transform: scaleY(0.9); opacity: 0.7; }
+  50%      { transform: scaleY(1.15); opacity: 1; }
+}
+
+@keyframes pedestrian-h {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(var(--travel, 80px)); }
+}
+
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.4); }
+}
+
+@keyframes smoke-drift {
+  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  10%  { opacity: 0.5; }
+  90%  { opacity: 0.3; }
+  100% { transform: translate(-12px, -36px) scale(1.6); opacity: 0; }
+}
+
 .neon { animation: neon-pulse 2.2s ease-in-out infinite; }
 .blink { animation: blink 1s steps(2, start) infinite; }
 .bob { animation: bob 0.9s ease-in-out infinite; }
 .fade-in { animation: fade-in 1.2s ease-out both; }
 .fade-in-slow { animation: fade-in 2.4s ease-out both; }
 .glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+.sway { animation: sway 4.2s ease-in-out infinite; transform-origin: bottom center; }
+.window-flicker { animation: window-flicker 5.5s ease-in-out infinite; }
+.lamp-pulse { animation: lamp-pulse 3.5s ease-in-out infinite; }
+.cable-travel { animation: cable-travel 32s linear infinite; }
+.cable-bob { animation: cable-bob 1.4s ease-in-out infinite; }
+.fountain-spurt { animation: fountain-spurt 1.8s ease-in-out infinite; transform-origin: bottom center; }
+.pedestrian-h { animation: pedestrian-h 14s ease-in-out infinite alternate; }
+.star-twinkle { animation: star-twinkle 3.2s ease-in-out infinite; }
+.smoke-drift { animation: smoke-drift 4s ease-in-out infinite; }

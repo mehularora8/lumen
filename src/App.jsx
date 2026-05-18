@@ -1,5 +1,27 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ENTITIES, PLAYER_START, ROADS, ROOM_COLS, ROOM_ROWS } from './data/town.js';
+﻿import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  BenchSprite as BenchView,
+  CableCar,
+  CityHallBuilding as CityHallView,
+  CoinSprite as CoinView,
+  FountainSprite as FountainView,
+  HouseBuilding as HouseView,
+  LampPost as LampView,
+  ParkGround as ParkView,
+  PhoneBoothBuilding as PhoneBoothView,
+  PlanterSprite as PlanterView,
+  ShopBuilding as ShopView,
+  TreeSprite as TreeView,
+} from './buildings.jsx';
+import {
+  ENTITIES,
+  ITEM_LABELS,
+  PEDESTRIANS,
+  PLAYER_START,
+  ROADS,
+  ROOM_COLS,
+  ROOM_ROWS,
+} from './data/town.js';
 import {
   addLeaderboardEntry,
   loadCompleted,
@@ -23,8 +45,8 @@ const SIDE_PANEL_WIDTH = 200;
 
 // --- reducer ----------------------------------------------------------------
 
-const initialState = (already) => ({
-  phase: 'entrance',
+const initialState = (already, skipWelcome = false) => ({
+  phase: skipWelcome ? 'entrance' : 'welcome',
   player: { ...PLAYER_START, step: 0 },
   unlocked: [],
   inventory: {},
@@ -36,6 +58,11 @@ const initialState = (already) => ({
 
 function invCount(inv, id) {
   return inv?.[id] || 0;
+}
+
+function itemLabel(id) {
+  if (!id) return '';
+  return ITEM_LABELS[id] || id.toUpperCase();
 }
 
 function invAdd(inv, id, n) {
@@ -53,6 +80,8 @@ function invRemove(inv, id, n) {
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'dismiss-welcome':
+      return { ...state, phase: 'entrance' };
     case 'enter-room':
       return { ...state, phase: 'playing', startTime: Date.now() };
     case 'move': {
@@ -115,20 +144,60 @@ function entityFootprint(entity) {
   return tiles;
 }
 
+const DECORATIVE_TYPES = new Set([
+  'park', 'corner', 'lamp', 'tree', 'planter', 'bench', 'coin',
+]);
+
+function isDecorative(entity) {
+  return DECORATIVE_TYPES.has(entity.type);
+}
+
 function isTileBlocked(x, y) {
-  return ENTITIES.some((e) =>
-    entityFootprint(e).some((t) => t.x === x && t.y === y),
-  );
+  return ENTITIES.some((e) => {
+    if (isDecorative(e)) return false;
+    return entityFootprint(e).some((t) => t.x === x && t.y === y);
+  });
+}
+
+function buildRoadMask(roads, cols, rows) {
+  // Each cell is null (not road) or { h: bool, v: bool } — flags reflect the
+  // orientation of every parent road segment that includes the tile. Tiles
+  // that sit on both H and V roads are intersections (both flags true) and
+  // skip lane dashes so nothing draws a "+".
+  const mask = Array.from({ length: rows }, () => Array(cols).fill(null));
+  for (const road of roads) {
+    const horizontal = road.width >= road.height;
+    for (let y = road.y; y < road.y + road.height; y++) {
+      for (let x = road.x; x < road.x + road.width; x++) {
+        if (y < 0 || y >= rows || x < 0 || x >= cols) continue;
+        if (!mask[y][x]) mask[y][x] = { h: false, v: false };
+        if (horizontal) mask[y][x].h = true;
+        else mask[y][x].v = true;
+      }
+    }
+  }
+  return mask;
 }
 
 function isPlayerAdjacent(player, entity) {
-  return entityFootprint(entity).some(
-    (t) => Math.abs(player.x - t.x) + Math.abs(player.y - t.y) === 1,
-  );
+  // For non-blocking entities (e.g. coins on the road) the player can stand
+  // *on* the tile, so allow distance 0 as well as 1.
+  const allowSame = isDecorative(entity);
+  return entityFootprint(entity).some((t) => {
+    const d = Math.abs(player.x - t.x) + Math.abs(player.y - t.y);
+    return d === 1 || (allowSame && d === 0);
+  });
 }
 
-function findAdjacentInteractable(player) {
-  return ENTITIES.find((e) => e.interaction && isPlayerAdjacent(player, e));
+function isEntityVisible(entity, unlocked) {
+  if (!entity.disappearWhenSolved) return true;
+  return !unlocked.includes(entity.id);
+}
+
+function findAdjacentInteractable(player, unlocked) {
+  return ENTITIES.find(
+    (e) => e.interaction && isEntityVisible(e, unlocked) && isPlayerAdjacent(player, e),
+  );
 }
 
 function formatTime(ms) {
@@ -189,13 +258,13 @@ export default function App() {
       }
       if (e.key === ' ' || e.key === 'Enter' || e.key === 'e' || e.key === 'E') {
         e.preventDefault();
-        const target = findAdjacentInteractable(state.player);
+        const target = findAdjacentInteractable(state.player, state.unlocked);
         if (target) dispatch({ type: 'open-item', id: target.id });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [state.phase, state.player, state.activeItemId, overlay]);
+  }, [state.phase, state.player, state.activeItemId, state.unlocked, overlay]);
 
   const activeEntity = useMemo(
     () => ENTITIES.find((e) => e.id === state.activeItemId) || null,
@@ -280,7 +349,7 @@ function LeftPanel({ elapsedMs, inventory }) {
 
       <PanelSection title="INVENTORY">
         {Object.keys(inventory).length === 0 ? (
-          <div className="text-arcade-cyan/50">— POCKETS FREE —</div>
+          <div className="text-arcade-cyan/40 italic">nothing yet</div>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {Object.entries(inventory).map(([id, count]) => (
@@ -288,7 +357,7 @@ function LeftPanel({ elapsedMs, inventory }) {
                 key={id}
                 className="text-arcade-green border border-arcade-green/50 rounded px-2 py-1 flex justify-between"
               >
-                <span>▸ {id.toUpperCase()}</span>
+                <span>▸ {itemLabel(id)}</span>
                 {count > 1 && <span className="text-arcade-yellow">×{count}</span>}
               </li>
             ))}
@@ -399,13 +468,14 @@ function Room({ state, tile }) {
           backgroundSize: `${tile}px ${tile}px`,
         }}
       >
-        {ROADS.map((road, i) => (
-          <RoadSegment key={i} road={road} tile={tile} />
-        ))}
+        <RoadLayer tile={tile} />
 
         {ENTITIES.map((entity) => (
           <EntityView key={entity.id} entity={entity} state={state} tile={tile} />
         ))}
+
+        <Pedestrians tile={tile} />
+        <CableCar tile={tile} rowY={0.6} />
 
         <Player player={state.player} phase={state.phase} tile={tile} />
       </div>
@@ -413,47 +483,129 @@ function Room({ state, tile }) {
   );
 }
 
-function RoadSegment({ road, tile }) {
-  const stride = Math.max(8, Math.round(tile * 0.18));
-  const horizontal = road.width >= road.height;
-  const stripe = Math.max(2, Math.round(tile * 0.06));
-  const dash = Math.max(10, Math.round(tile * 0.3));
-  const gap = Math.max(8, Math.round(tile * 0.22));
-  const dashGradient = `repeating-linear-gradient(${horizontal ? '90deg' : '0deg'}, rgba(252,211,77,0.85) 0 ${dash}px, transparent ${dash}px ${dash + gap}px)`;
+function Pedestrians({ tile }) {
+  return (
+    <>
+      {PEDESTRIANS.map((p) => (
+        <Pedestrian key={p.id} {...p} tile={tile} />
+      ))}
+    </>
+  );
+}
+
+function Pedestrian({ x, y, travel, duration, delay = 0, palette, tile }) {
+  return (
+    <div
+      className="absolute pointer-events-none z-[15] pedestrian-h"
+      style={{
+        left: x * tile,
+        top: y * tile,
+        width: tile,
+        height: tile,
+        '--travel': `${travel * tile}px`,
+        animationDuration: `${duration}s`,
+        animationDelay: `${delay}s`,
+      }}
+    >
+      <div className="bob">
+        <PersonSprite
+          size={Math.round(tile * 0.85)}
+          facing="down"
+          step={0}
+          palette={palette}
+          glow="rgba(94,234,212,0.4)"
+        />
+      </div>
+    </div>
+  );
+}
+
+const ROAD_MASK = buildRoadMask(ROADS, ROOM_COLS, ROOM_ROWS);
+
+function RoadLayer({ tile }) {
+  const tiles = [];
+  for (let y = 0; y < ROOM_ROWS; y++) {
+    for (let x = 0; x < ROOM_COLS; x++) {
+      const info = ROAD_MASK[y][x];
+      if (!info) continue;
+      tiles.push(
+        <RoadTile
+          key={`${x}-${y}`}
+          x={x}
+          y={y}
+          tile={tile}
+          info={info}
+          n={!!ROAD_MASK[y - 1]?.[x]}
+          s={!!ROAD_MASK[y + 1]?.[x]}
+          e={!!ROAD_MASK[y]?.[x + 1]}
+          w={!!ROAD_MASK[y]?.[x - 1]}
+        />,
+      );
+    }
+  }
+  return <>{tiles}</>;
+}
+
+function RoadTile({ x, y, tile, info, n, s, e, w }) {
+  const stride = Math.max(6, Math.round(tile * 0.16));
+  const stripe = Math.max(2, Math.round(tile * 0.05));
+  const dash = Math.max(8, Math.round(tile * 0.22));
+  const gap = Math.max(6, Math.round(tile * 0.18));
+  const hDash = `repeating-linear-gradient(90deg, rgba(252,211,77,0.35) 0 ${dash}px, transparent ${dash}px ${dash + gap}px)`;
+  const vDash = `repeating-linear-gradient(0deg, rgba(252,211,77,0.35) 0 ${dash}px, transparent ${dash}px ${dash + gap}px)`;
+  // Only draw a lane stripe if the tile's parent road runs in that direction
+  // AND it isn't also part of a road in the perpendicular direction (i.e.
+  // intersection tiles stay clean — no "+").
+  const drawH = info.h && !info.v;
+  const drawV = info.v && !info.h;
+
+  const edgeShadow = [
+    !n ? 'inset 0 2px 0 rgba(0,0,0,0.22)' : '',
+    !s ? 'inset 0 -2px 0 rgba(0,0,0,0.22)' : '',
+    !w ? 'inset 2px 0 0 rgba(0,0,0,0.22)' : '',
+    !e ? 'inset -2px 0 0 rgba(0,0,0,0.22)' : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
     <div
       className="absolute"
       style={{
-        left: road.x * tile,
-        top: road.y * tile,
-        width: road.width * tile,
-        height: road.height * tile,
+        left: x * tile,
+        top: y * tile,
+        width: tile,
+        height: tile,
         background: `repeating-linear-gradient(135deg, #5a6b5a 0 ${stride}px, #4a5a4a ${stride}px ${stride + 2}px)`,
-        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.4)',
+        boxShadow: edgeShadow || undefined,
       }}
     >
-      <div
-        className="absolute"
-        style={
-          horizontal
-            ? {
-                left: 0,
-                right: 0,
-                top: '50%',
-                height: stripe,
-                transform: 'translateY(-50%)',
-                backgroundImage: dashGradient,
-              }
-            : {
-                top: 0,
-                bottom: 0,
-                left: '50%',
-                width: stripe,
-                transform: 'translateX(-50%)',
-                backgroundImage: dashGradient,
-              }
-        }
-      />
+      {drawH && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: 0,
+            right: 0,
+            top: '50%',
+            height: stripe,
+            transform: 'translateY(-50%)',
+            backgroundImage: hDash,
+          }}
+        />
+      )}
+      {drawV && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: '50%',
+            width: stripe,
+            transform: 'translateX(-50%)',
+            backgroundImage: vDash,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -461,13 +613,35 @@ function RoadSegment({ road, tile }) {
 // --- entity rendering -------------------------------------------------------
 
 function EntityView({ entity, state, tile }) {
+  // Picked-up items (coin, etc.) vanish from the world after their pickup.
+  if (!isEntityVisible(entity, state.unlocked)) return null;
   const adjacent = isPlayerAdjacent(state.player, entity);
   const solved = state.unlocked.includes(entity.id);
 
   switch (entity.type) {
     case 'shop':
     case 'cafe':
-      return <ShopBuilding entity={entity} tile={tile} adjacent={adjacent} solved={solved} />;
+      return <ShopView entity={entity} tile={tile} adjacent={adjacent} solved={solved} />;
+    case 'house':
+      return <HouseView entity={entity} tile={tile} adjacent={adjacent} solved={solved} />;
+    case 'cityhall':
+      return <CityHallView entity={entity} tile={tile} adjacent={adjacent} solved={solved} />;
+    case 'phonebooth':
+      return <PhoneBoothView entity={entity} tile={tile} adjacent={adjacent} solved={solved} />;
+    case 'park':
+      return <ParkView entity={entity} tile={tile} adjacent={adjacent} />;
+    case 'fountain':
+      return <FountainView entity={entity} tile={tile} adjacent={adjacent} />;
+    case 'coin':
+      return <CoinView entity={entity} tile={tile} />;
+    case 'lamp':
+      return <LampView entity={entity} tile={tile} />;
+    case 'tree':
+      return <TreeView entity={entity} tile={tile} />;
+    case 'planter':
+      return <PlanterView entity={entity} tile={tile} />;
+    case 'bench':
+      return <BenchView entity={entity} tile={tile} />;
     case 'billboard':
       return <BillboardSign entity={entity} tile={tile} adjacent={adjacent} />;
     case 'corner':
@@ -479,115 +653,6 @@ function EntityView({ entity, state, tile }) {
   }
 }
 
-function ShopBuilding({ entity, tile, adjacent, solved }) {
-  const w = (entity.width || 1) * tile;
-  const h = (entity.height || 1) * tile;
-  const pal = entity.palette || {};
-  const wall = pal.wall || '#2a1a4a';
-  const awning = pal.awning || '#ff2d95';
-  const sign = pal.sign || '#fcd34d';
-  const door = pal.door || '#1a3d4a';
-  const awningH = Math.max(8, Math.round(tile * 0.25));
-  const doorW = Math.max(16, Math.round(tile * 0.5));
-  const doorH = Math.max(20, Math.round(tile * 0.6));
-  const isCafe = entity.type === 'cafe';
-
-  return (
-    <div
-      className="absolute z-10"
-      style={{ left: entity.x * tile, top: entity.y * tile, width: w, height: h }}
-    >
-      {/* wall */}
-      <div className="absolute inset-0" style={{ background: wall }} />
-      {/* windows row */}
-      <div
-        className="absolute left-2 right-2"
-        style={{
-          top: awningH + 6,
-          height: Math.round(tile * 0.35),
-          background: `repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 ${Math.round(tile * 0.4)}px, transparent ${Math.round(tile * 0.4)}px ${Math.round(tile * 0.55)}px)`,
-        }}
-      />
-      {/* awning */}
-      <div
-        className="absolute left-0 right-0 top-0"
-        style={{
-          height: awningH,
-          background: `repeating-linear-gradient(90deg, ${awning} 0 12px, rgba(0,0,0,0.25) 12px 14px)`,
-        }}
-      />
-      {/* sign */}
-      <div
-        className="absolute left-0 right-0 flex items-center justify-center text-center glow-breathe"
-        style={{
-          top: awningH + 2,
-          height: Math.round(tile * 0.32),
-          color: sign,
-          textShadow: '0 0 4px rgba(0,0,0,0.8)',
-          fontSize: Math.max(8, Math.round(tile * 0.16)),
-          letterSpacing: '0.15em',
-        }}
-      >
-        {entity.name}
-      </div>
-      {/* door (centered, bottom) */}
-      <div
-        className="absolute bottom-0 left-1/2"
-        style={{
-          width: doorW,
-          height: doorH,
-          marginLeft: -doorW / 2,
-          background: door,
-          borderTop: `2px solid ${sign}`,
-          borderLeft: '1px solid rgba(255,255,255,0.1)',
-          borderRight: '1px solid rgba(255,255,255,0.1)',
-        }}
-      >
-        {/* door knob */}
-        <div
-          className="absolute"
-          style={{
-            right: 3,
-            top: '50%',
-            width: 3,
-            height: 3,
-            background: sign,
-            borderRadius: 1,
-          }}
-        />
-      </div>
-      {/* cafe terrace (small table + chair in front of door, just decorative) */}
-      {isCafe && (
-        <div
-          className="absolute"
-          style={{
-            left: 4,
-            bottom: 4,
-            width: Math.round(tile * 0.3),
-            height: Math.round(tile * 0.25),
-            background: '#3a2d1f',
-            borderTop: `2px solid ${awning}`,
-          }}
-        />
-      )}
-      {/* status pip when adjacent */}
-      {adjacent && (
-        <div
-          className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bob"
-          style={{
-            background: '#1a3d4a',
-            color: sign,
-            fontSize: Math.max(7, Math.round(tile * 0.13)),
-            border: `1px solid ${sign}`,
-            borderRadius: 2,
-          }}
-        >
-          {solved ? '✓ DONE' : '▾ VISIT'}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function BillboardSign({ entity, tile, adjacent }) {
   const w = (entity.width || 1) * tile;
@@ -860,6 +925,41 @@ function DialogBody({ entity, state, onResolve }) {
     );
   }
 
+  if (inter.kind === 'pickup') {
+    if (solved) {
+      return (
+        <>
+          <BodyText text={inter.rewardText || 'Already picked up.'} />
+          <DialogFooter>
+            <PrimaryButton onClick={() => onResolve({ kind: 'close' })}>CLOSE</PrimaryButton>
+          </DialogFooter>
+        </>
+      );
+    }
+    return (
+      <>
+        <BodyText text={inter.text} />
+        {inter.rewardItem && (
+          <div className="text-[10px] text-arcade-cyan mb-3">
+            GET <span className="text-arcade-green">
+              {(inter.rewardCount || 1) > 1 ? `${inter.rewardCount}× ` : ''}
+              {itemLabel(inter.rewardItem)}
+            </span>
+          </div>
+        )}
+        <DialogFooter>
+          <button
+            onClick={() => onResolve({ kind: 'close' })}
+            className="text-[10px] px-3 py-2 border border-arcade-cyan/50 text-arcade-cyan rounded-sm hover:text-arcade-yellow hover:border-arcade-yellow"
+          >
+            LEAVE
+          </button>
+          <PrimaryButton onClick={() => onResolve({ kind: 'unlock' })}>TAKE</PrimaryButton>
+        </DialogFooter>
+      </>
+    );
+  }
+
   if (inter.kind === 'code') {
     if (solved) {
       return (
@@ -880,7 +980,7 @@ function DialogBody({ entity, state, onResolve }) {
           <>
             <BodyText text={inter.lockedText || inter.text} />
             <div className="text-[10px] text-arcade-pink mb-3">
-              (Needs: {need > 1 ? `${need}× ` : ''}{inter.requiresItem.toUpperCase()})
+              (Needs: {need > 1 ? `${need}× ` : ''}{itemLabel(inter.requiresItem)})
             </div>
             <DialogFooter>
               <PrimaryButton onClick={() => onResolve({ kind: 'close' })}>CLOSE</PrimaryButton>
@@ -916,7 +1016,7 @@ function DialogBody({ entity, state, onResolve }) {
           <>
             <BodyText text={inter.text || 'The gate is closed.'} />
             <div className="text-[10px] text-arcade-pink mb-3">
-              (You need: {need > 1 ? `${need}× ` : ''}{inter.requiresItem.toUpperCase()})
+              (You need: {need > 1 ? `${need}× ` : ''}{itemLabel(inter.requiresItem)})
             </div>
             <DialogFooter>
               <PrimaryButton onClick={() => onResolve({ kind: 'close' })}>BACK</PrimaryButton>
@@ -987,7 +1087,7 @@ function TradeBody({ entity, state, onResolve }) {
       <>
         <BodyText text={inter.lockedText || inter.text} />
         <div className="text-[9px] text-arcade-pink/80 mb-3">
-          (Needs: {need > 1 ? `${need}× ` : ''}{inter.requiresItem.toUpperCase()})
+          (Needs: {need > 1 ? `${need}× ` : ''}{itemLabel(inter.requiresItem)})
         </div>
         <DialogFooter>
           <PrimaryButton onClick={() => onResolve({ kind: 'close' })}>CLOSE</PrimaryButton>
@@ -1002,14 +1102,14 @@ function TradeBody({ entity, state, onResolve }) {
       <div className="text-[10px] text-arcade-cyan mb-3">
         GIVE <span className="text-arcade-pink">
           {need > 1 ? `${need}× ` : ''}
-          {inter.requiresItem.toUpperCase()}
+          {itemLabel(inter.requiresItem)}
         </span>
         {inter.rewardItem && (
           <>
             {' → '}
             GET <span className="text-arcade-green">
               {rewardCount > 1 ? `${rewardCount}× ` : ''}
-              {inter.rewardItem.toUpperCase()}
+              {itemLabel(inter.rewardItem)}
             </span>
           </>
         )}
